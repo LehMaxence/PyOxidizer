@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use {
-    crate::{WiXInstallerBuilder, WxsBuilder},
+    crate::{common::file_id, WiXInstallerBuilder, WxsBuilder},
     anyhow::{anyhow, Result},
     simple_file_manifest::FileManifest,
     std::{
@@ -410,6 +410,60 @@ impl WiXSimpleMsiBuilder {
 
         writer.write(XmlEvent::end_element().name("Directory"))?;
         writer.write(XmlEvent::end_element().name("Directory"))?;
+
+        writer.write(XmlEvent::start_element("Directory").attr("Id", "ProgramMenuFolder"))?;
+        writer.write(
+            XmlEvent::start_element("Directory")
+                .attr("Id", "ApplicationProgramsFolder")
+                .attr("Name", &self.product_name),
+        )?;
+        writer.write(
+            XmlEvent::start_element("Component")
+                .attr("Id", "ApplicationShortcut")
+                .attr("Guid", "*"),
+        )?;
+        writer.write(
+            XmlEvent::start_element("Shortcut")
+                .attr("Id", "ApplicationStartMenuShortcut")
+                .attr("Name", &self.product_name)
+                .attr(
+                    "Target",
+                    &format!(
+                        "[#{}]",
+                        file_id(
+                            &self.id_prefix,
+                            Path::new(&format!("{}.exe", self.product_name))
+                        )
+                    ),
+                )
+                .attr("WorkingDirectory", "APPLICATIONFOLDER"),
+        )?;
+        writer.write(XmlEvent::end_element().name("Shortcut"))?;
+        writer.write(
+            XmlEvent::start_element("RemoveFolder")
+                .attr("Id", "ApplicationProgramsFolder")
+                .attr("On", "uninstall"),
+        )?;
+        writer.write(XmlEvent::end_element().name("RemoveFolder"))?;
+        writer.write(
+            XmlEvent::start_element("RegistryValue")
+                .attr("Root", "HKCU")
+                .attr(
+                    "Key",
+                    &format!(
+                        "Software\\{}\\{}",
+                        self.product_manufacturer, self.product_name
+                    ),
+                )
+                .attr("Name", "installed")
+                .attr("Type", "integer")
+                .attr("Value", "1")
+                .attr("KeyPath", "yes"),
+        )?;
+        writer.write(XmlEvent::end_element().name("RegistryValue"))?;
+        writer.write(XmlEvent::end_element().name("Component"))?;
+        writer.write(XmlEvent::end_element().name("Directory"))?;
+        writer.write(XmlEvent::end_element().name("Directory"))?;
         writer.write(XmlEvent::end_element().name("Directory"))?;
 
         writer.write(
@@ -435,6 +489,9 @@ impl WiXSimpleMsiBuilder {
             writer.write(XmlEvent::start_element("ComponentRef").attr("Id", "License"))?;
             writer.write(XmlEvent::end_element().name("ComponentRef"))?;
         }
+
+        writer.write(XmlEvent::start_element("ComponentRef").attr("Id", "ApplicationShortcut"))?;
+        writer.write(XmlEvent::end_element().name("ComponentRef"))?;
 
         writer.write(
             XmlEvent::start_element("Feature")
