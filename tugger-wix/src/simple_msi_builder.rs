@@ -415,7 +415,7 @@ impl WiXSimpleMsiBuilder {
         writer.write(
             XmlEvent::start_element("Directory")
                 .attr("Id", "ApplicationProgramsFolder")
-                .attr("Name", &self.product_name),
+                .attr("Name", &self.product_manufacturer),
         )?;
         writer.write(
             XmlEvent::start_element("Component")
@@ -464,6 +464,59 @@ impl WiXSimpleMsiBuilder {
         writer.write(XmlEvent::end_element().name("Component"))?;
         writer.write(XmlEvent::end_element().name("Directory"))?;
         writer.write(XmlEvent::end_element().name("Directory"))?;
+
+        writer.write(
+            XmlEvent::start_element("Directory")
+                .attr("Id", "DesktopFolder")
+                .attr("Name", "Desktop"),
+        )?;
+        writer.write(
+            XmlEvent::start_element("Component")
+                .attr("Id", "ApplicationShortcutDesktop")
+                .attr("Guid", "*"),
+        )?;
+        writer.write(
+            XmlEvent::start_element("Shortcut")
+                .attr("Id", "ApplicationDesktopShortcut")
+                .attr("Name", &self.product_name)
+                .attr(
+                    "Target",
+                    &format!(
+                        "[#{}]",
+                        file_id(
+                            &self.id_prefix,
+                            Path::new(&format!("{}.exe", self.product_name))
+                        )
+                    ),
+                )
+                .attr("WorkingDirectory", "APPLICATIONFOLDER"),
+        )?;
+        writer.write(XmlEvent::end_element().name("Shortcut"))?;
+        writer.write(
+            XmlEvent::start_element("RemoveFolder")
+                .attr("Id", "DesktopFolder")
+                .attr("On", "uninstall"),
+        )?;
+        writer.write(XmlEvent::end_element().name("RemoveFolder"))?;
+        writer.write(
+            XmlEvent::start_element("RegistryValue")
+                .attr("Root", "HKCU")
+                .attr(
+                    "Key",
+                    &format!(
+                        "Software\\{}\\{}",
+                        self.product_manufacturer, self.product_name
+                    ),
+                )
+                .attr("Name", "installed")
+                .attr("Type", "integer")
+                .attr("Value", "1")
+                .attr("KeyPath", "yes"),
+        )?;
+        writer.write(XmlEvent::end_element().name("RegistryValue"))?;
+        writer.write(XmlEvent::end_element().name("Component"))?;
+        writer.write(XmlEvent::end_element().name("Directory"))?;
+
         writer.write(XmlEvent::end_element().name("Directory"))?;
 
         writer.write(
@@ -491,6 +544,11 @@ impl WiXSimpleMsiBuilder {
         }
 
         writer.write(XmlEvent::start_element("ComponentRef").attr("Id", "ApplicationShortcut"))?;
+        writer.write(XmlEvent::end_element().name("ComponentRef"))?;
+
+        writer.write(
+            XmlEvent::start_element("ComponentRef").attr("Id", "ApplicationShortcutDesktop"),
+        )?;
         writer.write(XmlEvent::end_element().name("ComponentRef"))?;
 
         writer.write(
