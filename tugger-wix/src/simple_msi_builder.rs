@@ -451,11 +451,11 @@ impl WiXSimpleMsiBuilder {
                 .attr(
                     "Key",
                     &format!(
-                        "Software\\{}\\{}",
+                        "Software\\{}\\{}\\start_menu",
                         self.product_manufacturer, self.product_name
                     ),
                 )
-                .attr("Name", "installed")
+                .attr("Name", "start_menu_shortcut_installed")
                 .attr("Type", "integer")
                 .attr("Value", "1")
                 .attr("KeyPath", "yes"),
@@ -504,11 +504,11 @@ impl WiXSimpleMsiBuilder {
                 .attr(
                     "Key",
                     &format!(
-                        "Software\\{}\\{}",
+                        "Software\\{}\\{}\\desktop",
                         self.product_manufacturer, self.product_name
                     ),
                 )
-                .attr("Name", "installed")
+                .attr("Name", "desktop_shortcut_installed")
                 .attr("Type", "integer")
                 .attr("Value", "1")
                 .attr("KeyPath", "yes"),
