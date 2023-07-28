@@ -6,7 +6,7 @@ use {
     crate::*,
     anyhow::{anyhow, Context, Result},
     log::warn,
-    std::{borrow::Cow, collections::BTreeMap, io::Write, ops::Deref, path::Path},
+    std::{borrow::Cow, collections::BTreeMap, io::Write, ops::Deref, path::Path, path::PathBuf},
     tugger_common::http::download_to_path,
     tugger_windows::{VcRedistributablePlatform, VC_REDIST_ARM64, VC_REDIST_X64, VC_REDIST_X86},
     uuid::Uuid,
@@ -38,6 +38,11 @@ pub struct WiXBundleInstallerBuilder<'a> {
     /// Keys to define in the preprocessor when running candle.
     preprocess_parameters: BTreeMap<String, String>,
 
+    /// Logo PNG image.
+    ///
+    /// Dimensions are 64x64.
+    logo_png: Option<PathBuf>,
+
     chain: Vec<ChainElement<'a>>,
 }
 
@@ -49,6 +54,15 @@ impl<'a> WiXBundleInstallerBuilder<'a> {
             bundle_manufacturer: manufacturer,
             ..Self::default()
         }
+    }
+
+    /// Set the path to a png file containing a logo to use for install.
+    ///
+    /// The dimensions of the logo should be 64 x 64.
+    #[must_use]
+    pub fn logo_png_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+        self.logo_png = Some(path.as_ref().to_path_buf());
+        self
     }
 
     fn upgrade_code(&self) -> Cow<'_, str> {
@@ -209,11 +223,14 @@ impl<'a> WiXBundleInstallerBuilder<'a> {
                 .attr("Id", "WixStandardBootstrapperApplication.HyperlinkLicense"),
         )?;
 
-        writer.write(
-            XmlEvent::start_element("bal:WixStandardBootstrapperApplication")
-                .attr("LicenseUrl", "")
-                .attr("SuppressOptionsUI", "yes"),
-        )?;
+        let e = XmlEvent::start_element("bal:WixStandardBootstrapperApplication")
+            .attr("LicenseUrl", "")
+            .attr("SuppressOptionsUI", "yes");
+        if let Some(logo_png) = &self.logo_png {
+            writer.write(e.attr("LogoFile", &logo_png.display().to_string()))?;
+        } else {
+            writer.write(e)?;
+        }
         writer.write(XmlEvent::end_element())?;
 
         // </BootstrapperApplicationRef>

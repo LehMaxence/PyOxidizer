@@ -14,7 +14,7 @@ use {
         environment::TypeValues,
         eval::call_stack::CallStack,
         values::{
-            error::{RuntimeError, ValueError},
+            error::{RuntimeError, UnsupportedOperation, ValueError},
             none::NoneType,
             {Mutable, TypedValue, Value, ValueResult},
         },
@@ -26,7 +26,10 @@ use {
     starlark_dialect_build_targets::{
         get_context_value, EnvironmentContext, ResolvedTarget, ResolvedTargetValue, RunMode,
     },
-    std::path::{Path, PathBuf},
+    std::{
+        path::{Path, PathBuf},
+        sync::{Arc, Mutex, MutexGuard},
+    },
     tugger_code_signing::SigningDestination,
     tugger_windows::VcRedistributablePlatform,
     tugger_wix::{MsiPackage, WiXBundleInstallerBuilder},
@@ -45,11 +48,16 @@ where
     })
 }
 
-pub struct WiXBundleBuilderValue<'a> {
-    pub inner: WiXBundleInstallerBuilder<'a>,
+pub struct WixBundleBuilderWrapper<'a> {
+    pub builder: WiXBundleInstallerBuilder<'a>,
     pub arch: String,
     pub id_prefix: String,
     pub build_msis: Vec<WiXMsiBuilderValue>,
+}
+
+#[derive(Clone)]
+pub struct WiXBundleBuilderValue<'a> {
+    pub inner: Arc<Mutex<WixBundleBuilderWrapper<'a>>>,
 }
 
 impl TypedValue for WiXBundleBuilderValue<'static> {
@@ -58,6 +66,25 @@ impl TypedValue for WiXBundleBuilderValue<'static> {
 
     fn values_for_descendant_check_and_freeze(&self) -> Box<dyn Iterator<Item = Value>> {
         Box::new(std::iter::empty())
+    }
+
+    fn set_attr(&mut self, attribute: &str, value: Value) -> Result<(), ValueError> {
+        let mut inner = self.inner(&format!("{}.{}", Self::TYPE, &attribute))?;
+
+        match attribute {
+            "logo_png_path" => {
+                inner.builder = inner.builder.clone().logo_png_path(value.to_string());
+            }
+            attr => {
+                return Err(ValueError::OperationNotSupported {
+                    op: UnsupportedOperation::SetAttr(attr.to_string()),
+                    left: Self::TYPE.to_string(),
+                    right: None,
+                })
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -69,19 +96,38 @@ impl<'a> WiXBundleBuilderValue<'a> {
         manufacturer: String,
         arch: String,
     ) -> ValueResult {
-        let inner = WiXBundleInstallerBuilder::new(name, version, manufacturer);
+        let builder = WiXBundleInstallerBuilder::new(name, version, manufacturer);
 
         Ok(Value::new(WiXBundleBuilderValue {
-            inner,
-            arch,
-            id_prefix,
-            build_msis: vec![],
+            inner: Arc::new(Mutex::new(WixBundleBuilderWrapper {
+                builder,
+                arch,
+                id_prefix,
+                build_msis: vec![],
+            })),
         }))
+    }
+
+    pub fn inner(
+        &self,
+        label: &str,
+    ) -> Result<MutexGuard<WixBundleBuilderWrapper<'a>>, ValueError> {
+        self.inner.try_lock().map_err(move |e| {
+            ValueError::Runtime(RuntimeError {
+                code: "TUGGER_WIX_BUNDLE_BUILDER",
+                message: format!("error obtaining lock: {}", e),
+                label: label.to_string(),
+            })
+        })
     }
 
     /// WiXBundleBuilder.add_condition(condition, message)
     pub fn add_condition(&mut self, condition: String, message: String) -> ValueResult {
-        self.inner.add_condition(&message, &condition);
+        const LABEL: &str = "WiXBundleBuilder.add_condition()";
+
+        let mut inner = self.inner(LABEL)?;
+
+        inner.builder.add_condition(&message, &condition);
 
         Ok(Value::new(NoneType::None))
     }
@@ -92,16 +138,21 @@ impl<'a> WiXBundleBuilderValue<'a> {
         type_values: &TypeValues,
         platform: String,
     ) -> ValueResult {
+        const LABEL: &str = "WiXBundleBuilder.add_vc_redistributable()";
+
+        let mut inner = self.inner(LABEL)?;
+
         let context_value = get_context_value(type_values)?;
         let context = context_value
             .downcast_ref::<EnvironmentContext>()
             .ok_or(ValueError::IncorrectParameterType)?;
 
-        error_context("WiXBundleBuilder.add_vc_redistributable()", || {
+        error_context(LABEL, || {
             let platform = VcRedistributablePlatform::try_from(platform.as_str())
                 .context("obtaining VcRedistributablePlatform from str")?;
 
-            self.inner
+            inner
+                .builder
                 .add_vc_redistributable(platform, context.build_path())
                 .context("adding VC++ Redistributable to bundle builder")
         })?;
@@ -118,6 +169,8 @@ impl<'a> WiXBundleBuilderValue<'a> {
     ) -> ValueResult {
         const LABEL: &str = "WiXBundleBuilder.add_wix_msi_builder()";
 
+        let mut inner = self.inner(LABEL)?;
+
         let mut package = MsiPackage {
             source_file: Some(builder.msi_filename(LABEL)?.into()),
             ..Default::default()
@@ -131,8 +184,8 @@ impl<'a> WiXBundleBuilderValue<'a> {
             package.install_condition = Some(install_condition.to_string().into());
         }
 
-        self.build_msis.push(builder);
-        self.inner.chain(package.into());
+        inner.build_msis.push(builder);
+        inner.builder.chain(package.into());
 
         Ok(Value::new(NoneType::None))
     }
@@ -144,18 +197,21 @@ impl<'a> WiXBundleBuilderValue<'a> {
         label: &'static str,
         dest_dir: &Path,
     ) -> Result<(PathBuf, String), ValueError> {
+        let inner = self.inner(label)?;
+
         // We need to ensure dependent MSIs are built.
-        for builder in self.build_msis.iter() {
+        for builder in inner.build_msis.iter() {
             builder.materialize(type_values, call_stack, label, dest_dir)?;
         }
 
         let builder = error_context(label, || {
-            self.inner
-                .to_installer_builder(&self.id_prefix, &self.arch, dest_dir)
+            inner
+                .builder
+                .to_installer_builder(&inner.id_prefix, &inner.arch, dest_dir)
                 .context("converting to WiXInstallerBuilder")
         })?;
 
-        let filename = self.inner.default_exe_filename();
+        let filename = inner.builder.default_exe_filename();
         let exe_path = dest_dir.join(&filename);
 
         error_context(label, || {
@@ -350,8 +406,8 @@ mod tests {
         assert_eq!(v.get_type(), "WiXBundleBuilder");
 
         let builder = v.downcast_ref::<WiXBundleBuilderValue>().unwrap();
-        assert_eq!(builder.id_prefix, "prefix");
-        assert_eq!(builder.arch, "x64");
+        assert_eq!(builder.inner.lock().unwrap().id_prefix, "prefix");
+        assert_eq!(builder.inner.lock().unwrap().arch, "x64");
 
         Ok(())
     }

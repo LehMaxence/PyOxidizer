@@ -1473,9 +1473,9 @@ mod tests {
             .downcast_ref::<WiXBundleBuilderValue>()
             .unwrap();
 
-        assert_eq!(builder.build_msis.len(), 1);
+        assert_eq!(builder.inner.try_lock().unwrap().build_msis.len(), 1);
         let mut writer = xml::EventWriter::new(vec![]);
-        builder.build_msis[0]
+        builder.inner.try_lock().unwrap().build_msis[0]
             .inner("ignored")
             .unwrap()
             .builder
