@@ -75,6 +75,9 @@ impl TypedValue for WiXBundleBuilderValue<'static> {
             "logo_png_path" => {
                 inner.builder = inner.builder.clone().logo_png_path(value.to_string());
             }
+            "icon_path" => {
+                inner.builder = inner.builder.clone().icon_path(value.to_string());
+            }
             attr => {
                 return Err(ValueError::OperationNotSupported {
                     op: UnsupportedOperation::SetAttr(attr.to_string()),

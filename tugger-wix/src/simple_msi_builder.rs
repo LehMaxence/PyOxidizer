@@ -3,7 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use {
-    crate::{common::file_id, WiXInstallerBuilder, WxsBuilder},
+    crate::{WiXInstallerBuilder, WxsBuilder},
     anyhow::{anyhow, Result},
     simple_file_manifest::FileManifest,
     std::{
@@ -411,6 +411,7 @@ impl WiXSimpleMsiBuilder {
         writer.write(XmlEvent::end_element().name("Directory"))?;
         writer.write(XmlEvent::end_element().name("Directory"))?;
 
+        let exe_target = format!("[APPLICATIONFOLDER]{}.exe", self.product_name);
         writer.write(XmlEvent::start_element("Directory").attr("Id", "ProgramMenuFolder"))?;
         writer.write(
             XmlEvent::start_element("Directory")
@@ -422,22 +423,19 @@ impl WiXSimpleMsiBuilder {
                 .attr("Id", "ApplicationShortcut")
                 .attr("Guid", "*"),
         )?;
-        writer.write(
-            XmlEvent::start_element("Shortcut")
-                .attr("Id", "ApplicationStartMenuShortcut")
-                .attr("Name", &self.product_name)
-                .attr(
-                    "Target",
-                    &format!(
-                        "[#{}]",
-                        file_id(
-                            &self.id_prefix,
-                            Path::new(&format!("{}.exe", self.product_name))
-                        )
-                    ),
-                )
-                .attr("WorkingDirectory", "APPLICATIONFOLDER"),
-        )?;
+
+        let shortcut = XmlEvent::start_element("Shortcut")
+            .attr("Id", "ApplicationStartMenuShortcut")
+            .attr("Name", &self.product_name)
+            .attr("Target", &exe_target)
+            .attr("WorkingDirectory", "APPLICATIONFOLDER");
+
+        if self.product_icon.is_some() {
+            writer.write(shortcut.attr("Icon", "ProductICO"))?;
+        } else {
+            writer.write(shortcut)?;
+        }
+
         writer.write(XmlEvent::end_element().name("Shortcut"))?;
         writer.write(
             XmlEvent::start_element("RemoveFolder")
@@ -475,22 +473,19 @@ impl WiXSimpleMsiBuilder {
                 .attr("Id", "ApplicationShortcutDesktop")
                 .attr("Guid", "*"),
         )?;
-        writer.write(
-            XmlEvent::start_element("Shortcut")
-                .attr("Id", "ApplicationDesktopShortcut")
-                .attr("Name", &self.product_name)
-                .attr(
-                    "Target",
-                    &format!(
-                        "[#{}]",
-                        file_id(
-                            &self.id_prefix,
-                            Path::new(&format!("{}.exe", self.product_name))
-                        )
-                    ),
-                )
-                .attr("WorkingDirectory", "APPLICATIONFOLDER"),
-        )?;
+
+        let shortcut = XmlEvent::start_element("Shortcut")
+            .attr("Id", "ApplicationDesktopShortcut")
+            .attr("Name", &self.product_name)
+            .attr("Target", &exe_target)
+            .attr("WorkingDirectory", "APPLICATIONFOLDER");
+
+        if self.product_icon.is_some() {
+            writer.write(shortcut.attr("Icon", "ProductICO"))?;
+        } else {
+            writer.write(shortcut)?;
+        }
+
         writer.write(XmlEvent::end_element().name("Shortcut"))?;
         writer.write(
             XmlEvent::start_element("RemoveFolder")

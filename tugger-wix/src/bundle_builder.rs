@@ -43,6 +43,9 @@ pub struct WiXBundleInstallerBuilder<'a> {
     /// Dimensions are 64x64.
     logo_png: Option<PathBuf>,
 
+    /// Icon of the bundle installer.
+    icon_source_file: Option<PathBuf>,
+
     chain: Vec<ChainElement<'a>>,
 }
 
@@ -62,6 +65,13 @@ impl<'a> WiXBundleInstallerBuilder<'a> {
     #[must_use]
     pub fn logo_png_path<P: AsRef<Path>>(mut self, path: P) -> Self {
         self.logo_png = Some(path.as_ref().to_path_buf());
+        self
+    }
+
+    /// Set the path to the icon of the installer.
+    #[must_use]
+    pub fn icon_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+        self.icon_source_file = Some(path.as_ref().to_path_buf());
         self
     }
 
@@ -216,7 +226,11 @@ impl<'a> WiXBundleInstallerBuilder<'a> {
             bundle
         };
 
-        writer.write(bundle)?;
+        if let Some(value) = &self.icon_source_file {
+            writer.write(bundle.attr("IconSourceFile", &value.display().to_string()))?;
+        } else {
+            writer.write(bundle)?;
+        };
 
         writer.write(
             XmlEvent::start_element("BootstrapperApplicationRef")
